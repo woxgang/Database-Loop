@@ -1,0 +1,125 @@
+Attribute VB_Name = "Loop Records"
+Option Compare Database
+Option Explicit
+Dim TXdate As Date
+Dim Tcount As Integer
+Dim PlanDue As String
+
+Sub tPlanTracking()
+Dim db As Database
+Dim rs1 As Recordset
+Dim pi As String
+Dim pln As String
+Dim pfn As String
+
+Dim s As String
+Dim pconvert As Integer
+'Delete Table
+Call DeleteTable
+'MakeTable
+DoCmd.SetWarnings False
+DoCmd.OpenQuery "qryLoopTable"
+DoCmd.SetWarnings True
+
+Set db = CurrentDb
+
+
+Set rs1 = db.OpenRecordSet("qryLoopInsert")
+
+
+pi = rs1.Fields("PatientID")
+pln = rs1.Fields("PatLastName")
+pfn = rs1.Fields("PatFirstName")
+  
+With rs1
+
+    .MoveFirst
+    Do Until rs1.EOF
+    
+        If pi = rs1.Fields("PatientID") Then
+        
+            
+            If rs1.Fields("VisitType") = "TX Plan" Or rs1.Fields("VisitType") = "INTAKE" Then
+                TXdate = rs1.Fields("ApptDate")
+                Tcount = 0
+            Else
+                Tcount = Tcount + 1
+            End If
+            
+        Else
+        
+            Call SetTPlanDue(TXdate, Tcount)
+            CurrentDb.Execute "INSERT INTO tbl0TempTPlanStatus (PatientID, PatLastName, PatFirstName, TPlanStatusDue) VALUES ('" & pi & "', '" & fncSQLStr(pln) & "', '" & pfn & "', '" & PlanDue & "')"
+            
+            pi = rs1.Fields("PatientID")
+            pln = rs1.Fields("PatLastName")
+            pfn = rs1.Fields("PatFirstName")
+
+                If rs1.Fields("VisitType") = "TX Plan" Or rs1.Fields("VisitType") = "INTAKE" Then
+                    TXdate = rs1.Fields("ApptDate")
+                    Tcount = 0
+                Else
+                
+                Tcount = Tcount + 1
+                
+                End If
+                        
+        End If
+    .MoveNext
+    Loop
+    
+    Call SetTPlanDue(TXdate, Tcount)
+    CurrentDb.Execute "INSERT INTO tbl0TempTPlanStatus (PatientID, PatLastName, PatFirstName, TPlanStatusDue) VALUES ('" & pi & "', '" & fncSQLStr(pln) & "', '" & pfn & "', '" & PlanDue & "')"
+    
+End With
+DoCmd.OpenReport "rptTreatmentPlanStatus", acViewReport
+rs1.Close
+Set rs1 = Nothing
+db.Close
+Set db = Nothing
+
+End Sub
+
+Sub SetTPlanDue(TreatmentDate As Date, TreatmentCount As Integer)
+
+    If TreatmentDate < DateAdd("d", -105, Date) Or TreatmentCount >= 13 Then
+        
+        PlanDue = "Due"
+        Tcount = 0
+        TXdate = Empty
+        
+    Else
+        PlanDue = "Not Due"
+        Tcount = 0
+        TXdate = Empty
+        
+    End If
+    
+End Sub
+
+Public Function fncSQLStr(varStr As Variant) As String
+
+If IsNull(varStr) Then
+        fncSQLStr = ""
+    Else
+        fncSQLStr = Replace(Trim(varStr), "'", " ")
+    End If
+
+End Function
+
+Function DeleteTable()
+On Error GoTo DeleteTable_Err
+
+DoCmd.DeleteObject acTable = acDefault, "tbl0TempTPlanStatus"
+
+Exit Function
+DeleteTable_Err:
+If Err = 7874 Then
+Resume Next
+Else
+MsgBox Error, Err
+End If
+End Function
+
+
+
