@@ -1,0 +1,154 @@
+Attribute VB_Name = "Loop Records"
+
+'Microsoft Access Option Statements.
+Option Compare Database
+Option Explicit
+
+'Global Variables.
+'Can be accessed by all subroutines and functions in the application.
+Dim TXdate As Date
+Dim Tcount As Integer
+Dim PlanDue As String
+
+'Subroutine to loop through all records in a query.
+Sub tPlanTracking()
+
+'Local variables for subroutine.
+Dim db As Database
+Dim rs1 As Recordset
+Dim pi As String
+Dim pln As String
+Dim pfn As String
+Dim s As String
+Dim pconvert As Integer
+
+'If temporary table exists calls subroutine to delete table.
+Call DeleteTable
+
+'Makes new empty table to hold data
+DoCmd.SetWarnings False
+DoCmd.OpenQuery "qryLoopTable"
+DoCmd.SetWarnings True
+
+'Sets references for object variables.
+Set db = CurrentDb
+Set rs1 = db.OpenRecordSet("qryLoopInsert") 'Runs query.
+
+'Sets variables to the fields of the first record in the query.
+pi = rs1.Fields("PatientID")
+pln = rs1.Fields("PatLastName")
+pfn = rs1.Fields("PatFirstName")
+
+'Loops through all records in the dataset.  
+With rs1
+
+    .MoveFirst 'Moves to the firest record.
+    Do Until rs1.EOF 'Loops until end of file is reached.
+    
+	'Tests the patient ID has not change.
+        If pi = rs1.Fields("PatientID") Then
+        
+            'Tests for the correct visit type in the record.
+	    'If condition is met date is recorded and variable is reset.
+            'Else encounter count is incremented.
+            If rs1.Fields("VisitType") = "TX Plan" Or rs1.Fields("VisitType") = "INTAKE" Then
+                TXdate = rs1.Fields("ApptDate")
+                Tcount = 0
+            Else
+                Tcount = Tcount + 1
+            End If
+            
+        Else
+        
+	    'Calls sub routine to find out is a treatment plan is due. 	
+            Call SetTPlanDue(TXdate, Tcount)
+            'If the record is for the next patient the status of the treatment plan is entered into the temporary table.
+            CurrentDb.Execute "INSERT INTO tbl0TempTPlanStatus (PatientID, PatLastName, PatFirstName, TPlanStatusDue) VALUES ('" & pi & "', '" & fncSQLStr(pln) & "', '" & pfn & "', '" & PlanDue & "')"
+            
+	    'Sets variables to the new patients information.
+            pi = rs1.Fields("PatientID")
+            pln = rs1.Fields("PatLastName")
+            pfn = rs1.Fields("PatFirstName")
+
+		'Analyzes the first record of the new patient.
+                If rs1.Fields("VisitType") = "TX Plan" Or rs1.Fields("VisitType") = "INTAKE" Then
+                    TXdate = rs1.Fields("ApptDate")
+                    Tcount = 0
+                Else
+                
+                Tcount = Tcount + 1
+                
+                End If
+                        
+        End If
+
+    'Moves to the next record in the loop.
+    .MoveNext
+    Loop
+    
+    'Checks the very last record in the query and inserts it into the table if a treatment plan i due.
+    Call SetTPlanDue(TXdate, Tcount)
+    CurrentDb.Execute "INSERT INTO tbl0TempTPlanStatus (PatientID, PatLastName, PatFirstName, TPlanStatusDue) VALUES ('" & pi & "', '" & fncSQLStr(pln) & "', '" & pfn & "', '" & PlanDue & "')"
+    
+End With
+
+"Opens the report for viewing or printing.
+DoCmd.OpenReport "rptTreatmentPlanStatus", acViewReport
+
+'Cleans up opject references in memory.
+rs1.Close
+Set rs1 = Nothing
+db.Close
+Set db = Nothing
+
+End Sub
+
+
+'Subroutine to set the global variable for the treatment plan due status.
+Sub SetTPlanDue(TreatmentDate As Date, TreatmentCount As Integer)
+
+    'Tests the date and count varibles for the correct condition to set the treatment plan status.
+    If TreatmentDate < DateAdd("d", -105, Date) Or TreatmentCount >= 13 Then
+        
+        PlanDue = "Due"
+        Tcount = 0
+        TXdate = Empty
+        
+    Else
+        PlanDue = "Not Due"
+        Tcount = 0
+        TXdate = Empty
+        
+    End If
+    
+End Sub
+
+'Checks a name for an apostroph and removes it.
+'The apostrophe ends the program and throws an error.
+Public Function fncSQLStr(varStr As Variant) As String
+
+If IsNull(varStr) Then
+        fncSQLStr = ""
+    Else
+        fncSQLStr = Replace(Trim(varStr), "'", " ")
+    End If
+
+End Function
+
+'This function teletes the temporary table if it exists.
+Function DeleteTable()
+On Error GoTo DeleteTable_Err
+
+DoCmd.DeleteObject acTable = acDefault, "tbl0TempTPlanStatus"
+
+Exit Function
+DeleteTable_Err:
+If Err = 7874 Then
+Resume Next
+Else
+MsgBox Error, Err
+End If
+End Function
+
+
+
